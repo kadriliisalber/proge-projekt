@@ -1,55 +1,140 @@
-import tkinter as tk
-from tkinter import messagebox
-from PIL import Image, ImageTk # PIL = pilte töötlev teek, avab pildifaili, muudab pildi tkinteris kuvamiseks sobivaks
-import random, json, os
+import pygame, random, json, os, sys
+
+# -------------------------------
+# Andmete laadimine
+# -------------------------------
+with open("andmed/nimed.json", "r", encoding="utf-8") as f:
+    andmed = json.load(f)
+
+kategooriad = list(andmed.keys())
 praegune_kategooria = None
+praegune_fail = None
 praegune_nimi = None
 õige_vastus = 0
 vale_vastus = 0
 
-f = open("andmed/nimed.json", "r", encoding ="utf-8")
-nimed = json.load(f) # muudab jsoni pythonile arusaadavaks
+# -------------------------------
+# Pygame initsialiseerimine
+# -------------------------------
+pygame.init()
+aken = pygame.display.set_mode((800, 600))
+pygame.display.set_caption("Eesti kuulsuste äraarvamismäng")
+font = pygame.font.SysFont("Arial", 28)
+small_font = pygame.font.SysFont("Arial", 20)
+clock = pygame.time.Clock()
 
-root = tk.Tk() # avab akna
-root.title("Eesti kuulsuste äraarvamismäng")
-manguaeg = 120
-root.after(manguaeg * 1000, lopeta_mang)
+# -------------------------------
+# Kategoorianupud
+# -------------------------------
+nupud = []
+for i, kateg in enumerate(kategooriad):
+    x = 50
+    y = 100 + i*60
+    w = 200
+    h = 50
+    nupud.append((kateg, x, y, w, h))
 
-def vali_kategooria(kategooria):
-    global praegune_kategooria
-    praegune_kategooria = kategooria
-    kuva_juhuslik_pilt()
-    
+# -------------------------------
+# Funktsioonid
+# -------------------------------
 def kuva_juhuslik_pilt():
-    global praegune_nimi, pilt, sisestus
+    global praegune_fail, praegune_nimi, pilt
     kaust = os.path.join("andmed", praegune_kategooria)
-    fail = random.choice(list(andmed[praegune_kategooria].keys()))
-    õige_nimi = andmed[praegune_kategooria][fail]
-    praegune_nimi = õige_nimi
+    praegune_fail = random.choice(list(andmed[praegune_kategooria].keys()))
+    praegune_nimi = andmed[praegune_kategooria][praegune_fail]
 
-    pilt = Image.open(os.path.join(kaust, fail))
-    foto = ImageTk.PhotoImage(pilt)
-    pilt_Label.config(image=foto) #pilt ekraanile
-    pilt_Label.image = foto #pilt ekraanile
-    
-    sisestus.delete(0, tk.END) # kustutab eelmise vastuse
+    pilt = pygame.image.load(os.path.join(kaust, praegune_fail))
+    pilt = pygame.transform.scale(pilt, (400, 400))
+    return pilt
 
-def kontrolli_vastust():
-    global õige_vastus, vale_vastus
-    vastus = sisestus.get().strip()
-    if vastus.lower() == current_name.lower():
-        õige_vastus += 1
-        messagebox.showinfo("Õige!")
-    else:
-        vale_vastus += 1
-        messagebox.showinfo(f"Vale! Õige nimi on {praegune_nimi}") # vb asendada showinfo showerroriga
-    kuva_juhuslik_pilt()
+def joonista_nupud():
+    for kateg, x, y, w, h in nupud:
+        pygame.draw.rect(aken, (70,130,180), (x, y, w, h))
+        tekst = font.render(kateg, True, (255,255,255))
+        aken.blit(tekst, (x + 10, y + 10))
+
+def kuva_tulemused():
+    aken.fill((0,0,0))
+    tekst1 = font.render(f"Õigeid vastuseid: {õige_vastus}", True, (0,255,0))
+    tekst2 = font.render(f"Valesid vastuseid: {vale_vastus}", True, (255,0,0))
+    aken.blit(tekst1, (200, 200))
+    aken.blit(tekst2, (200, 300))
+    pygame.display.flip()
+    pygame.time.delay(5000)  # näita 5 sekundit enne sulgemist
+
+# -------------------------------
+# Mängu muutujad
+# -------------------------------
+sisend = ""
+algusaeg = None
+mang_alkas = False
+running = True
+
+# -------------------------------
+# Game loop
+# -------------------------------
+while running:
+    aken.fill((0, 0, 0))
     
-def lopeta_mang():
-    messagebox.showinfo("Tulemused", f"Õigeid vastuseid: {õige_vastus}\nValesid vastuseid: {vale_vastus}")
-    root.destroy() # sulgeb tkinteri akna
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
         
-f.close()   
+        # Hiireklikk kategooria valikuks
+        elif event.type == pygame.MOUSEBUTTONDOWN and not mang_alkas:
+            mx, my = pygame.mouse.get_pos()
+            for kateg, x, y, w, h in nupud:
+                if x <= mx <= x + w and y <= my <= y + h:
+                    praegune_kategooria = kateg
+                    pilt = kuva_juhuslik_pilt()
+                    algusaeg = pygame.time.get_ticks()
+                    mang_alkas = True
+        
+        # Klaviatuuri sisend
+        elif event.type == pygame.KEYDOWN and mang_alkas:
+            if event.key == pygame.K_RETURN:
+                if sisend.strip().lower() == praegune_nimi.lower():
+                    õige_vastus += 1
+                else:
+                    vale_vastus += 1
+                sisend = ""
+                pilt = kuva_juhuslik_pilt()
+            elif event.key == pygame.K_BACKSPACE:
+                sisend = sisend[:-1]
+            else:
+                sisend += event.unicode
     
-root.mainloop() # hoiab akna avatud 
+    # Kui mäng pole alanud, kuvatakse kategoorianupud
+    if not mang_alkas:
+        pealkiri = font.render("Vali kategooria:", True, (255,255,255))
+        aken.blit(pealkiri, (50, 50))
+        joonista_nupud()
+    
+    # Kui mäng on alanud, kuvatakse pilt ja sisestus
+    else:
+        aken.blit(pilt, (200, 100))
+        instruktsioon = font.render("Kirjuta kuulsuse nimi ja vajuta Enter:", True, (255, 255, 255))
+        aken.blit(instruktsioon, (50, 50))
+        sisend_tekst = font.render(sisend, True, (255, 255, 255))
+        aken.blit(sisend_tekst, (50, 550))
+        
+        # Taimer ekraanil
+        jäänud = max(0, 120 - (pygame.time.get_ticks() - algusaeg)//1000)
+        timer_tekst = font.render(f"Aega jäänud: {jäänud}s", True, (255, 255, 0))
+        aken.blit(timer_tekst, (550, 50))
+        
+        # Kontrolli mängu lõppu
+        if pygame.time.get_ticks() - algusaeg > 120000:  # 2 minutit
+            running = False
+    
+    pygame.display.flip()
+    clock.tick(30)
+
+# -------------------------------
+# Mäng lõppes
+# -------------------------------
+kuva_tulemused()
+pygame.quit()
+sys.exit()
+
 
